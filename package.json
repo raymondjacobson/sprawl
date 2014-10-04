@@ -1,0 +1,21 @@
+{
+  "name": "aviato",
+  "version": "0.0.1",
+  "description": "magic",
+  "main": "backend/backend.js",
+  "scripts": {
+    "start": "watchify inject/hijack.js -o inject/h_bundle.js & watchify inject/worker.js -o inject/w_bundle.js & watchify backend/background.js -o backend/bundle.js && fg",
+    "build": "browserify inject/app.js | uglifyjs -cm > inject/bundle.min.js",
+    "collect-static": "collect-static . ./static"
+  },
+  "repository": {
+    "type": "git",
+    "url": "none"
+  },
+  "keywords": [
+    "none"
+  ],
+  "license": "MIT",
+  "dependencies": {
+  }
+}
