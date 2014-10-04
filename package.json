@@ -17,5 +17,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "concat-stream": "^1.4.6",
+    "prettysize": "0.0.3",
+    "webtorrent": "^0.8.0"
   }
 }
