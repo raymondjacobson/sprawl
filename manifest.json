@@ -6,7 +6,7 @@
     "version": "1.0",
     "permissions": [],
     "background": {
-        "scripts": ["inject/w_bundle.js", "backend/bundle.js", "jquery-2.1.1.min.js"]
+        "scripts": ["backend/bundle.js", "jquery-2.1.1.min.js"]
     },
     "content_security_policy": "script-src 'self' 'unsafe-eval' https://ssl.google-analytics.com https://s.ytimg.com https://apis.google.com; object-src 'self'",
     "browser_action": {
@@ -27,7 +27,7 @@
     "content_scripts": [{
         "matches": ["<all_urls>"],
         "run_at": "document_start",
-        "js": ["inject/w_bundle.js", "jquery-2.1.1.min.js", "inject/h_bundle.js"]
+        "js": ["patch-worker.js", "jquery-2.1.1.min.js", "inject/h_bundle.js"]
     }],
     "web_accessible_resources": ["inject/w_bundle.js", "jquery-2.1.1.min.js"]
 }

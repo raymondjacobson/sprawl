@@ -1,57 +1,63 @@
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({"/Users/raymond/code/hackupstate-fall-2014/sprawl/inject/torrent.js":[function(require,module,exports){
 /* Provides functionality for torrenting
  Works via the WebTorrent module */
 
 var WebTorrent = require('webtorrent')
-  , contact = require('concat-stream')
+  , concat = require('concat-stream')
   , prettysize = require('prettysize')
   , request = require('request')
-  , toBuffer = require('typedarray-to-buffer');
+  , toBuffer = require('typedarray-to-buffer')
+  , md5 = require('MD5');
 
 var kvStoreURL = 'http://raymondjacobson.com:3000/';
 
 client = new WebTorrent();
 
+/* Download handler, to send callbacks */
+var onTorrentDownload = function(torrent, callback) {
+  // console.log(torrent.infoHash);
+  console.log(torrent.swarm);
+  torrent.swarm.on('download', function () {
+    var progress = (100 * torrent.downloaded / torrent.parsedTorrent.length).toFixed(1)
+    console.log('%c progress: ' + progress + '% -- download speed: ' + prettysize(torrent.swarm.downloadSpeed()) + '/s', 'color: #3B6F25');
+  });
+  files = [];
+  torrent.files.forEach(function (file) {
+    files.push(file);
+    file.createReadStream().pipe(concat(function (buf) {
+      /* Download of file is done */
+      new_url = URL.createObjectURL(new Blob([ buf ]));
+      callback(new_url);
+    }));
+  });
+}
+
 /* Downloads the torrent for a given assetURL */
-exports.download = function(assetURL, callback) {
+module.exports = {
+ download: function(assetURL, callback) {
   /* First, get the hash_info for the torrent file */
-  var getUrl = kvStoreURL + 'get/' + assetURL;
+  var getUrl = kvStoreURL + 'get/' + md5(assetURL);
   request(getUrl, function(error, resp, body) {
-    if (!error && response.statusCode == 200) {
+    if (body.length >= 1) {
       /* Download the torrent */
+      // console.log(body);
       client.add({
         infoHash: body,
         announce: [ 'wss://tracker.webtorrent.io' ]
-      }, onTorrentDownload);
+      }, function(torrent) {
+        onTorrentDownload(torrent, callback);
+      });
     }
     /* Return out -1 if we couldn't look up in KV Store */
     else {
       callback(-1);
     }
   });
-  /* Download handler, to send callbacks */
-  var onTorrentDownload = function(torrent) {
-    console.log(torrent.infoHash);
-    console.log(torrent.swarm);
-    torrent.swarm.on('download', function () {
-      var progress = (100 * torrent.downloaded / torrent.parsedTorrent.length).toFixed(1)
-      console.log('progress: ' + progress + '% -- download speed: ' + prettysize(torrent.swarm.downloadSpeed()) + '/s')
-    });
-    files = [];
-    torrent.files.forEach(function (file) {
-      files.push(file);
-      file.createReadStream().pipe(concat(function (buf) {
-        /* Download of file is done */
-        new_url = URL.createObjectURL(new Blob([ buf ]));
-        callback(new_url);
-      }));
-    });
-  }
-}
+},
 
 
 /* Uploads the torrent given an assetURL */
-exports.upload = function(assetURL) {
+upload: function(assetURL) {
   var xhr=new XMLHttpRequest;
   xhr.responseType='blob';
   xhr.open('GET',assetURL,true);
@@ -59,15 +65,21 @@ exports.upload = function(assetURL) {
   xhr.onreadystatechange = function() {
     if (xhr.readyState == 4) {
       bb = xhr.response;
-      bb.name = url.split('/').pop(); 
+      bb.name = assetURL.split('/').pop(); 
       bb.lastModifiedDate = 0;
       var reader = new FileReader();
       reader.addEventListener('load', function (e) {
         var buffer = toBuffer(new Uint8Array(e.target.result))
         bb.buffer = buffer;
         new_url = URL.createObjectURL(bb);
+        // console.log(new_url);
         client.seed([bb], function(torrent) {
-          var putUrl = kvStoreURL + 'put/' + assetURL + '/' + torrent.infoHash;
+          var putUrl = kvStoreURL + 'put/' + md5(assetURL) + '/' + torrent.infoHash;
+          // console.log(putUrl);
+          console.log(torrent);
+          torrent.swarm.on('upload', function (){
+            console.log('%c Upload Speed: ' + prettysize(client.uploadSpeed()) + '/s',  'color: #502F8E')
+          });
           request(putUrl, function(error, resp, body) {});
         });
       });
@@ -78,7 +90,8 @@ exports.upload = function(assetURL) {
     }
   }
 }
-},{"concat-stream":3,"prettysize":15,"request":16,"typedarray-to-buffer":48,"webtorrent":49}],2:[function(require,module,exports){
+}
+},{"MD5":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/md5.js","concat-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/index.js","prettysize":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/prettysize/index.js","request":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/index.js","typedarray-to-buffer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js","webtorrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/inject/worker.js":[function(require,module,exports){
 var torrent = require('./torrent');
 
 self.addEventListener('message', function(e) {
@@ -124,7 +137,304 @@ function handle (url,callback) {
 
 }
 
-},{"./torrent":1}],3:[function(require,module,exports){
+},{"./torrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/inject/torrent.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/md5.js":[function(require,module,exports){
+(function (Buffer){
+(function(){
+  var crypt = require('crypt'),
+      utf8 = require('charenc').utf8,
+      bin = require('charenc').bin,
+
+  // The core
+  md5 = function (message, options) {
+    // Convert to byte array
+    if (message.constructor == String)
+      if (options && options.encoding === 'binary')
+        message = bin.stringToBytes(message);
+      else
+        message = utf8.stringToBytes(message);
+    else if (typeof Buffer != 'undefined' &&
+        typeof Buffer.isBuffer == 'function' && Buffer.isBuffer(message))
+      message = Array.prototype.slice.call(message, 0);
+    else if (!Array.isArray(message))
+      message = message.toString();
+    // else, assume byte array already
+
+    var m = crypt.bytesToWords(message),
+        l = message.length * 8,
+        a =  1732584193,
+        b = -271733879,
+        c = -1732584194,
+        d =  271733878;
+
+    // Swap endian
+    for (var i = 0; i < m.length; i++) {
+      m[i] = ((m[i] <<  8) | (m[i] >>> 24)) & 0x00FF00FF |
+             ((m[i] << 24) | (m[i] >>>  8)) & 0xFF00FF00;
+    }
+
+    // Padding
+    m[l >>> 5] |= 0x80 << (l % 32);
+    m[(((l + 64) >>> 9) << 4) + 14] = l;
+
+    // Method shortcuts
+    var FF = md5._ff,
+        GG = md5._gg,
+        HH = md5._hh,
+        II = md5._ii;
+
+    for (var i = 0; i < m.length; i += 16) {
+
+      var aa = a,
+          bb = b,
+          cc = c,
+          dd = d;
+
+      a = FF(a, b, c, d, m[i+ 0],  7, -680876936);
+      d = FF(d, a, b, c, m[i+ 1], 12, -389564586);
+      c = FF(c, d, a, b, m[i+ 2], 17,  606105819);
+      b = FF(b, c, d, a, m[i+ 3], 22, -1044525330);
+      a = FF(a, b, c, d, m[i+ 4],  7, -176418897);
+      d = FF(d, a, b, c, m[i+ 5], 12,  1200080426);
+      c = FF(c, d, a, b, m[i+ 6], 17, -1473231341);
+      b = FF(b, c, d, a, m[i+ 7], 22, -45705983);
+      a = FF(a, b, c, d, m[i+ 8],  7,  1770035416);
+      d = FF(d, a, b, c, m[i+ 9], 12, -1958414417);
+      c = FF(c, d, a, b, m[i+10], 17, -42063);
+      b = FF(b, c, d, a, m[i+11], 22, -1990404162);
+      a = FF(a, b, c, d, m[i+12],  7,  1804603682);
+      d = FF(d, a, b, c, m[i+13], 12, -40341101);
+      c = FF(c, d, a, b, m[i+14], 17, -1502002290);
+      b = FF(b, c, d, a, m[i+15], 22,  1236535329);
+
+      a = GG(a, b, c, d, m[i+ 1],  5, -165796510);
+      d = GG(d, a, b, c, m[i+ 6],  9, -1069501632);
+      c = GG(c, d, a, b, m[i+11], 14,  643717713);
+      b = GG(b, c, d, a, m[i+ 0], 20, -373897302);
+      a = GG(a, b, c, d, m[i+ 5],  5, -701558691);
+      d = GG(d, a, b, c, m[i+10],  9,  38016083);
+      c = GG(c, d, a, b, m[i+15], 14, -660478335);
+      b = GG(b, c, d, a, m[i+ 4], 20, -405537848);
+      a = GG(a, b, c, d, m[i+ 9],  5,  568446438);
+      d = GG(d, a, b, c, m[i+14],  9, -1019803690);
+      c = GG(c, d, a, b, m[i+ 3], 14, -187363961);
+      b = GG(b, c, d, a, m[i+ 8], 20,  1163531501);
+      a = GG(a, b, c, d, m[i+13],  5, -1444681467);
+      d = GG(d, a, b, c, m[i+ 2],  9, -51403784);
+      c = GG(c, d, a, b, m[i+ 7], 14,  1735328473);
+      b = GG(b, c, d, a, m[i+12], 20, -1926607734);
+
+      a = HH(a, b, c, d, m[i+ 5],  4, -378558);
+      d = HH(d, a, b, c, m[i+ 8], 11, -2022574463);
+      c = HH(c, d, a, b, m[i+11], 16,  1839030562);
+      b = HH(b, c, d, a, m[i+14], 23, -35309556);
+      a = HH(a, b, c, d, m[i+ 1],  4, -1530992060);
+      d = HH(d, a, b, c, m[i+ 4], 11,  1272893353);
+      c = HH(c, d, a, b, m[i+ 7], 16, -155497632);
+      b = HH(b, c, d, a, m[i+10], 23, -1094730640);
+      a = HH(a, b, c, d, m[i+13],  4,  681279174);
+      d = HH(d, a, b, c, m[i+ 0], 11, -358537222);
+      c = HH(c, d, a, b, m[i+ 3], 16, -722521979);
+      b = HH(b, c, d, a, m[i+ 6], 23,  76029189);
+      a = HH(a, b, c, d, m[i+ 9],  4, -640364487);
+      d = HH(d, a, b, c, m[i+12], 11, -421815835);
+      c = HH(c, d, a, b, m[i+15], 16,  530742520);
+      b = HH(b, c, d, a, m[i+ 2], 23, -995338651);
+
+      a = II(a, b, c, d, m[i+ 0],  6, -198630844);
+      d = II(d, a, b, c, m[i+ 7], 10,  1126891415);
+      c = II(c, d, a, b, m[i+14], 15, -1416354905);
+      b = II(b, c, d, a, m[i+ 5], 21, -57434055);
+      a = II(a, b, c, d, m[i+12],  6,  1700485571);
+      d = II(d, a, b, c, m[i+ 3], 10, -1894986606);
+      c = II(c, d, a, b, m[i+10], 15, -1051523);
+      b = II(b, c, d, a, m[i+ 1], 21, -2054922799);
+      a = II(a, b, c, d, m[i+ 8],  6,  1873313359);
+      d = II(d, a, b, c, m[i+15], 10, -30611744);
+      c = II(c, d, a, b, m[i+ 6], 15, -1560198380);
+      b = II(b, c, d, a, m[i+13], 21,  1309151649);
+      a = II(a, b, c, d, m[i+ 4],  6, -145523070);
+      d = II(d, a, b, c, m[i+11], 10, -1120210379);
+      c = II(c, d, a, b, m[i+ 2], 15,  718787259);
+      b = II(b, c, d, a, m[i+ 9], 21, -343485551);
+
+      a = (a + aa) >>> 0;
+      b = (b + bb) >>> 0;
+      c = (c + cc) >>> 0;
+      d = (d + dd) >>> 0;
+    }
+
+    return crypt.endian([a, b, c, d]);
+  };
+
+  // Auxiliary functions
+  md5._ff  = function (a, b, c, d, x, s, t) {
+    var n = a + (b & c | ~b & d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._gg  = function (a, b, c, d, x, s, t) {
+    var n = a + (b & d | c & ~d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._hh  = function (a, b, c, d, x, s, t) {
+    var n = a + (b ^ c ^ d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._ii  = function (a, b, c, d, x, s, t) {
+    var n = a + (c ^ (b | ~d)) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+
+  // Package private blocksize
+  md5._blocksize = 16;
+  md5._digestsize = 16;
+
+  module.exports = function (message, options) {
+    if(typeof message == 'undefined')
+      return;
+
+    var digestbytes = crypt.wordsToBytes(md5(message, options));
+    return options && options.asBytes ? digestbytes :
+        options && options.asString ? bin.bytesToString(digestbytes) :
+        crypt.bytesToHex(digestbytes);
+  };
+
+})();
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","charenc":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/node_modules/charenc/charenc.js","crypt":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/node_modules/crypt/crypt.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/node_modules/charenc/charenc.js":[function(require,module,exports){
+var charenc = {
+  // UTF-8 encoding
+  utf8: {
+    // Convert a string to a byte array
+    stringToBytes: function(str) {
+      return charenc.bin.stringToBytes(unescape(encodeURIComponent(str)));
+    },
+
+    // Convert a byte array to a string
+    bytesToString: function(bytes) {
+      return decodeURIComponent(escape(charenc.bin.bytesToString(bytes)));
+    }
+  },
+
+  // Binary encoding
+  bin: {
+    // Convert a string to a byte array
+    stringToBytes: function(str) {
+      for (var bytes = [], i = 0; i < str.length; i++)
+        bytes.push(str.charCodeAt(i) & 0xFF);
+      return bytes;
+    },
+
+    // Convert a byte array to a string
+    bytesToString: function(bytes) {
+      for (var str = [], i = 0; i < bytes.length; i++)
+        str.push(String.fromCharCode(bytes[i]));
+      return str.join('');
+    }
+  }
+};
+
+module.exports = charenc;
+
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/MD5/node_modules/crypt/crypt.js":[function(require,module,exports){
+(function() {
+  var base64map
+      = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+
+  crypt = {
+    // Bit-wise rotation left
+    rotl: function(n, b) {
+      return (n << b) | (n >>> (32 - b));
+    },
+
+    // Bit-wise rotation right
+    rotr: function(n, b) {
+      return (n << (32 - b)) | (n >>> b);
+    },
+
+    // Swap big-endian to little-endian and vice versa
+    endian: function(n) {
+      // If number given, swap endian
+      if (n.constructor == Number) {
+        return crypt.rotl(n, 8) & 0x00FF00FF | crypt.rotl(n, 24) & 0xFF00FF00;
+      }
+
+      // Else, assume array and swap all items
+      for (var i = 0; i < n.length; i++)
+        n[i] = crypt.endian(n[i]);
+      return n;
+    },
+
+    // Generate an array of any length of random bytes
+    randomBytes: function(n) {
+      for (var bytes = []; n > 0; n--)
+        bytes.push(Math.floor(Math.random() * 256));
+      return bytes;
+    },
+
+    // Convert a byte array to big-endian 32-bit words
+    bytesToWords: function(bytes) {
+      for (var words = [], i = 0, b = 0; i < bytes.length; i++, b += 8)
+        words[b >>> 5] |= bytes[i] << (24 - b % 32);
+      return words;
+    },
+
+    // Convert big-endian 32-bit words to a byte array
+    wordsToBytes: function(words) {
+      for (var bytes = [], b = 0; b < words.length * 32; b += 8)
+        bytes.push((words[b >>> 5] >>> (24 - b % 32)) & 0xFF);
+      return bytes;
+    },
+
+    // Convert a byte array to a hex string
+    bytesToHex: function(bytes) {
+      for (var hex = [], i = 0; i < bytes.length; i++) {
+        hex.push((bytes[i] >>> 4).toString(16));
+        hex.push((bytes[i] & 0xF).toString(16));
+      }
+      return hex.join('');
+    },
+
+    // Convert a hex string to a byte array
+    hexToBytes: function(hex) {
+      for (var bytes = [], c = 0; c < hex.length; c += 2)
+        bytes.push(parseInt(hex.substr(c, 2), 16));
+      return bytes;
+    },
+
+    // Convert a byte array to a base-64 string
+    bytesToBase64: function(bytes) {
+      for (var base64 = [], i = 0; i < bytes.length; i += 3) {
+        var triplet = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+        for (var j = 0; j < 4; j++)
+          if (i * 8 + j * 6 <= bytes.length * 8)
+            base64.push(base64map.charAt((triplet >>> 6 * (3 - j)) & 0x3F));
+          else
+            base64.push('=');
+      }
+      return base64.join('');
+    },
+
+    // Convert a base-64 string to a byte array
+    base64ToBytes: function(base64) {
+      // Remove non-base-64 characters
+      base64 = base64.replace(/[^A-Z0-9+\/]/ig, '');
+
+      for (var bytes = [], i = 0, imod4 = 0; i < base64.length;
+          imod4 = ++i % 4) {
+        if (imod4 == 0) continue;
+        bytes.push(((base64map.indexOf(base64.charAt(i - 1))
+            & (Math.pow(2, -2 * imod4 + 8) - 1)) << (imod4 * 2))
+            | (base64map.indexOf(base64.charAt(i)) >>> (6 - imod4 * 2)));
+      }
+      return bytes;
+    }
+  };
+
+  module.exports = crypt;
+})();
+
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/index.js":[function(require,module,exports){
 (function (Buffer){
 var Writable = require('readable-stream').Writable
 var inherits = require('inherits')
@@ -260,7 +570,7 @@ function u8Concat (parts) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"inherits":4,"readable-stream":13,"typedarray":14}],4:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js","readable-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/readable.js","typedarray":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/typedarray/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js":[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -285,7 +595,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],5:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -378,7 +688,7 @@ function forEach (xs, f) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_readable":7,"./_stream_writable":9,"_process":150,"core-util-is":10,"inherits":4}],6:[function(require,module,exports){
+},{"./_stream_readable":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_readable.js","./_stream_writable":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_writable.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -426,7 +736,7 @@ PassThrough.prototype._transform = function(chunk, encoding, cb) {
   cb(null, chunk);
 };
 
-},{"./_stream_transform":8,"core-util-is":10,"inherits":4}],7:[function(require,module,exports){
+},{"./_stream_transform":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_transform.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_readable.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -1381,7 +1691,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":5,"_process":150,"buffer":122,"core-util-is":10,"events":141,"inherits":4,"isarray":11,"stream":166,"string_decoder/":12,"util":108}],8:[function(require,module,exports){
+},{"./_stream_duplex":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js","isarray":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","string_decoder/":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_transform.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1592,7 +1902,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":5,"core-util-is":10,"inherits":4}],9:[function(require,module,exports){
+},{"./_stream_duplex":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_writable.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2073,7 +2383,7 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":5,"_process":150,"buffer":122,"core-util-is":10,"inherits":4,"stream":166}],10:[function(require,module,exports){
+},{"./_stream_duplex":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js":[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2183,12 +2493,12 @@ function objectToString(o) {
   return Object.prototype.toString.call(o);
 }
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],11:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js":[function(require,module,exports){
 module.exports = Array.isArray || function (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]';
 };
 
-},{}],12:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2411,7 +2721,7 @@ function base64DetectIncompleteChar(buffer) {
   this.charLength = this.charReceived ? 3 : 0;
 }
 
-},{"buffer":122}],13:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/readable.js":[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = require('stream');
 exports.Readable = exports;
@@ -2420,7 +2730,7 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":5,"./lib/_stream_passthrough.js":6,"./lib/_stream_readable.js":7,"./lib/_stream_transform.js":8,"./lib/_stream_writable.js":9,"stream":166}],14:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js","./lib/_stream_passthrough.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js","./lib/_stream_readable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_readable.js","./lib/_stream_transform.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_transform.js","./lib/_stream_writable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_writable.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/typedarray/index.js":[function(require,module,exports){
 var undefined = (void 0); // Paranoia
 
 // Beyond this value, index getters/setters (i.e. array[0], array[1]) are so slow to
@@ -3052,7 +3362,7 @@ function packF32(v) { return packIEEE754(v, 8, 23); }
 
 }());
 
-},{}],15:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/prettysize/index.js":[function(require,module,exports){
 /*
 Copyright (c) 2013, Yahoo! Inc. All rights reserved.
 Code licensed under the BSD License:
@@ -3099,7 +3409,7 @@ module.exports = function(size, nospace, one) {
     return mysize;
 };
 
-},{}],16:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/index.js":[function(require,module,exports){
 (function (process){
 // Copyright 2010-2012 Mikeal Rogers
 //
@@ -3269,7 +3579,7 @@ request.debug = process.env.NODE_DEBUG && /\brequest\b/.test(process.env.NODE_DE
 request.initParams = initParams
 
 }).call(this,require('_process'))
-},{"./lib/cookies":17,"./lib/copy":18,"./lib/helpers":20,"./request":47,"_process":150,"util":170}],17:[function(require,module,exports){
+},{"./lib/cookies":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/cookies.js","./lib/copy":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/copy.js","./lib/helpers":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/helpers.js","./request":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/request.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/cookies.js":[function(require,module,exports){
 var optional = require('./optional')
   , tough = optional('tough-cookie')
   , Cookie = tough && tough.Cookie
@@ -3299,7 +3609,7 @@ exports.jar = function() {
   return jar;
 };
 
-},{"./optional":21}],18:[function(require,module,exports){
+},{"./optional":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/optional.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/copy.js":[function(require,module,exports){
 module.exports =
 function copy (obj) {
   var o = {}
@@ -3308,7 +3618,7 @@ function copy (obj) {
   })
   return o
 }
-},{}],19:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/debug.js":[function(require,module,exports){
 var util = require('util')
   , request = require('../index')
   ;
@@ -3319,7 +3629,7 @@ module.exports = function debug() {
   }
 }
 
-},{"../index":16,"util":170}],20:[function(require,module,exports){
+},{"../index":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/index.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/helpers.js":[function(require,module,exports){
 var extend = require('util')._extend
 
 function constructObject(initialObject) {
@@ -3371,7 +3681,7 @@ exports.constructOptionsFrom  = constructOptionsFrom
 exports.filterForCallback     = filterForCallback
 exports.paramsHaveRequestBody = paramsHaveRequestBody
 
-},{"util":170}],21:[function(require,module,exports){
+},{"util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/optional.js":[function(require,module,exports){
 module.exports = function(moduleName) {
   try {
     return module.parent.require(moduleName);
@@ -3386,7 +3696,7 @@ module.exports = function(moduleName) {
   }
 };
 
-},{}],22:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/bl.js":[function(require,module,exports){
 (function (Buffer){
 var DuplexStream = require('readable-stream').Duplex
   , util         = require('util')
@@ -3606,11 +3916,11 @@ BufferList.prototype.destroy = function () {
 module.exports = BufferList
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"readable-stream":32,"util":170}],23:[function(require,module,exports){
-arguments[4][5][0].apply(exports,arguments)
-},{"./_stream_readable":25,"./_stream_writable":27,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js":5,"_process":150,"core-util-is":28,"inherits":29}],24:[function(require,module,exports){
-arguments[4][6][0].apply(exports,arguments)
-},{"./_stream_transform":26,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js":6,"core-util-is":28,"inherits":29}],25:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","readable-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_passthrough.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_readable.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -4596,7 +4906,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"_process":150,"buffer":122,"core-util-is":28,"events":141,"inherits":29,"isarray":30,"stream":166,"string_decoder/":31}],26:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js","isarray":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/isarray/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","string_decoder/":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/string_decoder/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4808,7 +5118,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":23,"core-util-is":28,"inherits":29}],27:[function(require,module,exports){
+},{"./_stream_duplex":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -5198,15 +5508,15 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":23,"_process":150,"buffer":122,"core-util-is":28,"inherits":29,"stream":166}],28:[function(require,module,exports){
-module.exports=require(10)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js":10,"buffer":122}],29:[function(require,module,exports){
-module.exports=require(4)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js":4}],30:[function(require,module,exports){
-module.exports=require(11)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js":11}],31:[function(require,module,exports){
-module.exports=require(12)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js":12,"buffer":122}],32:[function(require,module,exports){
+},{"./_stream_duplex":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","core-util-is":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/core-util-is/lib/util.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/core-util-is/lib/util.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/isarray/index.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/string_decoder/index.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js":[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Readable = exports;
 exports.Writable = require('./lib/_stream_writable.js');
@@ -5214,7 +5524,7 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":23,"./lib/_stream_passthrough.js":24,"./lib/_stream_readable.js":25,"./lib/_stream_transform.js":26,"./lib/_stream_writable.js":27}],33:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js","./lib/_stream_passthrough.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_passthrough.js","./lib/_stream_readable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_readable.js","./lib/_stream_transform.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js","./lib/_stream_writable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/caseless/index.js":[function(require,module,exports){
 function Caseless (dict) {
   this.dict = dict
 }
@@ -5281,7 +5591,7 @@ module.exports.httpify = function (resp, headers) {
   return c
 }
 
-},{}],34:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/forever-agent/index.js":[function(require,module,exports){
 module.exports = ForeverAgent
 ForeverAgent.SSL = ForeverAgentSSL
 
@@ -5402,7 +5712,7 @@ function createConnectionSSL (port, host, options) {
   return tls.connect(options);
 }
 
-},{"http":142,"https":146,"net":106,"tls":106,"util":170}],35:[function(require,module,exports){
+},{"http":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/index.js","https":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/https-browserify/index.js","net":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","tls":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/json-stringify-safe/stringify.js":[function(require,module,exports){
 module.exports = stringify;
 
 function getSerialize (fn, decycle) {
@@ -5443,8 +5753,8 @@ function stringify(obj, fn, spaces, decycle) {
 
 stringify.getSerialize = getSerialize;
 
-},{}],36:[function(require,module,exports){
-module.exports={
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/custom.json":[function(require,module,exports){
+module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports={
   "text/jade": [
     "jade"
   ],
@@ -5472,7 +5782,7 @@ module.exports={
   ]
 }
 
-},{}],37:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/index.js":[function(require,module,exports){
 
 // types[extension] = type
 exports.types = Object.create(null)
@@ -5549,8 +5859,8 @@ function define(json) {
   })
 }
 
-},{"./custom.json":36,"./mime.json":38,"./node.json":39}],38:[function(require,module,exports){
-module.exports={
+},{"./custom.json":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/custom.json","./mime.json":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/mime.json","./node.json":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/node.json"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/mime.json":[function(require,module,exports){
+module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports={
   "application/1d-interleaved-parityfec": [],
   "application/3gpp-ims+xml": [],
   "application/activemessage": [],
@@ -8868,8 +9178,8 @@ module.exports={
   ]
 }
 
-},{}],39:[function(require,module,exports){
-module.exports={
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/node.json":[function(require,module,exports){
+module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports=module.exports={
   "text/vtt": [
     "vtt"
   ],
@@ -8925,7 +9235,7 @@ module.exports={
   ]
 }
 
-},{}],40:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/node-uuid/uuid.js":[function(require,module,exports){
 (function (Buffer){
 //     uuid.js
 //
@@ -9174,10 +9484,10 @@ module.exports={
 }).call(this);
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"crypto":129}],41:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","crypto":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/index.js":[function(require,module,exports){
 module.exports = require('./lib');
 
-},{"./lib":42}],42:[function(require,module,exports){
+},{"./lib":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/index.js":[function(require,module,exports){
 // Load modules
 
 var Stringify = require('./stringify');
@@ -9194,7 +9504,7 @@ module.exports = {
     parse: Parse
 };
 
-},{"./parse":43,"./stringify":44}],43:[function(require,module,exports){
+},{"./parse":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/parse.js","./stringify":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/stringify.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/parse.js":[function(require,module,exports){
 // Load modules
 
 var Utils = require('./utils');
@@ -9351,7 +9661,7 @@ module.exports = function (str, depth, delimiter) {
     return Utils.compact(obj);
 };
 
-},{"./utils":45}],44:[function(require,module,exports){
+},{"./utils":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/utils.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/stringify.js":[function(require,module,exports){
 (function (Buffer){
 // Load modules
 
@@ -9410,7 +9720,7 @@ module.exports = function (obj, delimiter) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],45:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/lib/utils.js":[function(require,module,exports){
 (function (Buffer){
 // Load modules
 
@@ -9547,7 +9857,7 @@ exports.compact = function (obj) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],46:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/tunnel-agent/index.js":[function(require,module,exports){
 (function (process,Buffer){
 'use strict'
 
@@ -9787,7 +10097,7 @@ if (process.env.NODE_DEBUG && /\btunnel\b/.test(process.env.NODE_DEBUG)) {
 exports.debug = debug // for test
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":150,"assert":107,"buffer":122,"events":141,"http":142,"https":146,"net":106,"tls":106,"util":170}],47:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","assert":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/assert/assert.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","http":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/index.js","https":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/https-browserify/index.js","net":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","tls":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/request.js":[function(require,module,exports){
 (function (process,Buffer){
 var optional = require('./lib/optional')
   , http = require('http')
@@ -11288,7 +11598,7 @@ Request.defaultProxyHeaderWhiteList =
 module.exports = Request
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./lib/cookies":17,"./lib/copy":18,"./lib/debug":19,"./lib/optional":21,"_process":150,"bl":22,"buffer":122,"caseless":33,"crypto":129,"forever-agent":34,"http":142,"json-stringify-safe":35,"mime-types":37,"net":106,"node-uuid":40,"qs":41,"querystring":154,"stream":166,"tunnel-agent":46,"url":168,"util":170,"zlib":121}],48:[function(require,module,exports){
+},{"./lib/cookies":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/cookies.js","./lib/copy":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/copy.js","./lib/debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/debug.js","./lib/optional":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/lib/optional.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","bl":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/bl.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","caseless":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/caseless/index.js","crypto":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/index.js","forever-agent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/forever-agent/index.js","http":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/index.js","json-stringify-safe":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/json-stringify-safe/stringify.js","mime-types":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/mime-types/lib/index.js","net":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","node-uuid":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/node-uuid/uuid.js","qs":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/qs/index.js","querystring":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","tunnel-agent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/tunnel-agent/index.js","url":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/url/url.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js","zlib":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/src/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js":[function(require,module,exports){
 (function (Buffer){
 /**
  * Convert a typed array to a Buffer without a copy
@@ -11311,7 +11621,7 @@ module.exports = function (arr) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],49:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/index.js":[function(require,module,exports){
 (function (process,Buffer){
 // TODO: dhtPort and torrentPort should be consistent between restarts
 // TODO: peerId and nodeId should be consistent between restarts
@@ -11620,7 +11930,7 @@ WebTorrent.prototype._onTorrent = function (torrent) {
 }
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./lib/fs-storage":108,"./lib/server":108,"./lib/storage":52,"./lib/torrent":53,"_process":150,"bittorrent-dht/client":108,"buffer":122,"create-torrent":57,"debug":67,"events":141,"extend.js":74,"hat":76,"inherits":77,"load-ip-set":108,"parse-torrent":80,"run-parallel":89,"speedometer":90}],50:[function(require,module,exports){
+},{"./lib/fs-storage":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","./lib/server":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","./lib/storage":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/storage.js","./lib/torrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/torrent.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","bittorrent-dht/client":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","create-torrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/index.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","hat":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/hat/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","load-ip-set":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","parse-torrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/index.js","run-parallel":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/run-parallel/index.js","speedometer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/speedometer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/file-stream.js":[function(require,module,exports){
 module.exports = FileStream
 
 var debug = require('debug')('webtorrent:file-stream')
@@ -11721,7 +12031,7 @@ FileStream.prototype.destroy = function () {
   self._destroyed = true
 }
 
-},{"debug":67,"inherits":77,"stream":166}],51:[function(require,module,exports){
+},{"debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/rarity-map.js":[function(require,module,exports){
 module.exports = RarityMap
 
 /**
@@ -11809,7 +12119,7 @@ RarityMap.prototype.getRarestPiece = function (pieceFilterFunc) {
   }
 }
 
-},{}],52:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/storage.js":[function(require,module,exports){
 (function (process,Buffer){
 module.exports = Storage
 
@@ -12367,7 +12677,7 @@ Storage.prototype._checkDone = function () {
 }
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./file-stream":50,"_process":150,"bitfield":55,"block-stream":56,"buffer":122,"debug":67,"dezalgo":70,"end-of-stream":73,"events":141,"extend.js":74,"git-sha1":75,"inherits":77,"stream":166}],53:[function(require,module,exports){
+},{"./file-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/file-stream.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","bitfield":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/bitfield/index.js","block-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/block-stream/block-stream.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","dezalgo":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/dezalgo.js","end-of-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/end-of-stream/index.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","git-sha1":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/git-sha1/git-sha1.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/torrent.js":[function(require,module,exports){
 (function (process){
 module.exports = Torrent
 
@@ -13362,7 +13672,7 @@ function randomizedForEach (array, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./rarity-map":51,"./storage":52,"_process":150,"addr-to-ip-port":54,"bittorrent-swarm":101,"concat-stream":108,"debug":67,"events":141,"fs":106,"http-https":108,"inherits":77,"parse-torrent":80,"re-emitter":88,"run-parallel":89,"torrent-discovery":91,"ut_metadata":97,"ut_pex":108}],54:[function(require,module,exports){
+},{"./rarity-map":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/rarity-map.js","./storage":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/lib/storage.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","addr-to-ip-port":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/addr-to-ip-port/index.js","bittorrent-swarm":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/index.js","concat-stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","fs":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","http-https":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","parse-torrent":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/index.js","re-emitter":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/re-emitter/index.js","run-parallel":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/run-parallel/index.js","torrent-discovery":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/index.js","ut_metadata":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/index.js","ut_pex":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/addr-to-ip-port/index.js":[function(require,module,exports){
 var cache = {}
 
 module.exports = function addrToIPPort (addr) {
@@ -13373,7 +13683,7 @@ module.exports = function addrToIPPort (addr) {
   return cache[addr]
 }
 
-},{}],55:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/bitfield/index.js":[function(require,module,exports){
 (function (Buffer){
 var Container = typeof Buffer !== "undefined" ? Buffer //in node, use buffers
 		: typeof Int8Array !== "undefined" ? Int8Array //in newer browsers, use webgl int8arrays
@@ -13435,7 +13745,7 @@ BitField.prototype._grow = function(length) {
 if(typeof module !== "undefined") module.exports = BitField;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],56:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/block-stream/block-stream.js":[function(require,module,exports){
 (function (process,Buffer){
 // write data to it, and it'll emit data in 512 byte blocks.
 // if you .end() or .flush(), it'll emit whatever it's got,
@@ -13648,7 +13958,7 @@ BlockStream.prototype._emitChunk = function (flush) {
 }
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":150,"assert":107,"buffer":122,"inherits":77,"stream":166}],57:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","assert":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/assert/assert.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/index.js":[function(require,module,exports){
 (function (Buffer){
 module.exports = createTorrent
 
@@ -13879,13 +14189,13 @@ function isBlob (obj) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"bencode":58,"block-stream":56,"buffer":122,"filestream/read":62,"flatten":63,"fs":106,"git-sha1":75,"multistream":64,"once":79,"path":149,"piece-length":65,"run-parallel":89,"stream":166}],58:[function(require,module,exports){
+},{"bencode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js","block-stream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/block-stream/block-stream.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","filestream/read":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/read.js","flatten":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/flatten/index.js","fs":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js","git-sha1":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/git-sha1/git-sha1.js","multistream":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/multistream/index.js","once":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js","path":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/path-browserify/index.js","piece-length":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/piece-length/index.js","run-parallel":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/run-parallel/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js":[function(require,module,exports){
 module.exports = {
   encode: require( './lib/encode' ),
   decode: require( './lib/decode' )
 }
 
-},{"./lib/decode":59,"./lib/encode":60}],59:[function(require,module,exports){
+},{"./lib/decode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/decode.js","./lib/encode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/encode.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/decode.js":[function(require,module,exports){
 (function (Buffer){
 /**
  * Decodes bencoded data.
@@ -14003,7 +14313,7 @@ decode.bytes = function() {
 module.exports = decode
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],60:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/encode.js":[function(require,module,exports){
 (function (Buffer){
 /**
  * Encodes data in bencode.
@@ -14108,9 +14418,9 @@ encode.list = function( buffers, data ) {
 module.exports = encode
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],61:[function(require,module,exports){
-module.exports=require(48)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js":48,"buffer":122}],62:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/node_modules/typedarray-to-buffer/index.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/read.js":[function(require,module,exports){
 (function (Buffer){
 /* jshint node: true */
 'use strict';
@@ -14204,7 +14514,7 @@ FileReadStream.prototype._handleProgress = function(evt) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"extend.js":74,"stream":166,"typedarray-to-buffer":61,"util":170}],63:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","typedarray-to-buffer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/node_modules/typedarray-to-buffer/index.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/flatten/index.js":[function(require,module,exports){
 module.exports = function flatten(list, depth) {
   depth = (typeof depth == 'number') ? depth : Infinity;
 
@@ -14222,7 +14532,7 @@ module.exports = function flatten(list, depth) {
   }
 };
 
-},{}],64:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/multistream/index.js":[function(require,module,exports){
 module.exports = MultiStream
 
 var inherits = require('inherits')
@@ -14330,7 +14640,7 @@ function toStreams2 (s) {
   return wrap
 }
 
-},{"inherits":77,"stream":166}],65:[function(require,module,exports){
+},{"inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/piece-length/index.js":[function(require,module,exports){
 var closest = require('closest-to')
 
 // Create a range from 16kb–4mb
@@ -14345,7 +14655,7 @@ module.exports = function(size) {
   )
 }
 
-},{"closest-to":66}],66:[function(require,module,exports){
+},{"closest-to":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/piece-length/node_modules/closest-to/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/piece-length/node_modules/closest-to/index.js":[function(require,module,exports){
 module.exports = function(target, numbers) {
   var closest = Infinity
   var difference = 0
@@ -14367,7 +14677,7 @@ module.exports = function(target, numbers) {
   return winner
 }
 
-},{}],67:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js":[function(require,module,exports){
 
 /**
  * This is the web browser implementation of `debug()`.
@@ -14516,7 +14826,7 @@ function load() {
 
 exports.enable(load());
 
-},{"./debug":68}],68:[function(require,module,exports){
+},{"./debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/debug.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/debug.js":[function(require,module,exports){
 
 /**
  * This is the common logic for both the Node.js and web browser
@@ -14715,7 +15025,7 @@ function coerce(val) {
   return val;
 }
 
-},{"ms":69}],69:[function(require,module,exports){
+},{"ms":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/node_modules/ms/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/node_modules/ms/index.js":[function(require,module,exports){
 /**
  * Helpers.
  */
@@ -14828,7 +15138,7 @@ function plural(ms, n, name) {
   return Math.ceil(ms / n) + ' ' + name + 's';
 }
 
-},{}],70:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/dezalgo.js":[function(require,module,exports){
 var wrappy = require('wrappy')
 module.exports = wrappy(dezalgo)
 
@@ -14852,7 +15162,7 @@ function dezalgo (cb) {
   }
 }
 
-},{"asap":71,"wrappy":72}],71:[function(require,module,exports){
+},{"asap":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/asap/asap.js","wrappy":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/asap/asap.js":[function(require,module,exports){
 (function (process){
 
 // Use the fastest possible means to execute a task in a future turn
@@ -14969,7 +15279,7 @@ module.exports = asap;
 
 
 }).call(this,require('_process'))
-},{"_process":150}],72:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js":[function(require,module,exports){
 // Returns a wrapper function that returns a wrapped callback
 // The wrapper function should do some stuff, and return a
 // presumably different callback function.
@@ -15004,7 +15314,7 @@ function wrappy (fn, cb) {
   }
 }
 
-},{}],73:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/end-of-stream/index.js":[function(require,module,exports){
 var once = require('once');
 
 var noop = function() {};
@@ -15088,7 +15398,7 @@ var eos = function(stream, opts, callback) {
 };
 
 module.exports = eos;
-},{"once":79}],74:[function(require,module,exports){
+},{"once":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js":[function(require,module,exports){
 /**
  * Extend an object with another.
  *
@@ -15110,7 +15420,7 @@ module.exports = function(src) {
   return src;
 }
 
-},{}],75:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/git-sha1/git-sha1.js":[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -15294,7 +15604,7 @@ function createJs(sync) {
 }
 
 }).call(this,require('_process'))
-},{"_process":150}],76:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/hat/index.js":[function(require,module,exports){
 var hat = module.exports = function (bits, base) {
     if (!base) base = 16;
     if (bits === undefined) bits = 128;
@@ -15358,11 +15668,11 @@ hat.rack = function (bits, base, expandBy) {
     return fn;
 };
 
-},{}],77:[function(require,module,exports){
-module.exports=require(4)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js":4}],78:[function(require,module,exports){
-module.exports=require(72)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js":72}],79:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/node_modules/wrappy/wrappy.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/dezalgo/node_modules/wrappy/wrappy.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js":[function(require,module,exports){
 var wrappy = require('wrappy')
 module.exports = wrappy(once)
 
@@ -15385,7 +15695,7 @@ function once (fn) {
   return f
 }
 
-},{"wrappy":78}],80:[function(require,module,exports){
+},{"wrappy":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/node_modules/wrappy/wrappy.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/index.js":[function(require,module,exports){
 (function (Buffer){
 var magnet = require('magnet-uri')
 var parseTorrentFile = require('parse-torrent-file')
@@ -15428,7 +15738,7 @@ module.exports = function parseTorrent (torrentId) {
 module.exports.toBuffer = parseTorrentFile.toBuffer
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"magnet-uri":81,"parse-torrent-file":84}],81:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","magnet-uri":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/index.js","parse-torrent-file":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/index.js":[function(require,module,exports){
 (function (Buffer){
 var base32 = require('thirty-two')
 
@@ -15504,7 +15814,7 @@ module.exports = function (uri) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"thirty-two":82}],82:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","thirty-two":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/node_modules/thirty-two/lib/thirty-two/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/node_modules/thirty-two/lib/thirty-two/index.js":[function(require,module,exports){
 /*                                                                              
 Copyright (c) 2011, Chris Umbel
 
@@ -15532,7 +15842,7 @@ var base32 = require('./thirty-two');
 exports.encode = base32.encode;
 exports.decode = base32.decode;
 
-},{"./thirty-two":83}],83:[function(require,module,exports){
+},{"./thirty-two":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/node_modules/thirty-two/lib/thirty-two/thirty-two.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/magnet-uri/node_modules/thirty-two/lib/thirty-two/thirty-two.js":[function(require,module,exports){
 (function (Buffer){
 /*                                                                              
 Copyright (c) 2011, Chris Umbel
@@ -15661,7 +15971,7 @@ exports.decode = function(encoded) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],84:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/index.js":[function(require,module,exports){
 (function (Buffer){
 module.exports = parseTorrent
 module.exports.toBuffer = toBuffer
@@ -15806,13 +16116,9 @@ function ensure (bool, fieldName) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"bencode":85,"buffer":122,"git-sha1":75,"path":149}],85:[function(require,module,exports){
-module.exports=require(58)
-},{"./lib/decode":86,"./lib/encode":87,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js":58}],86:[function(require,module,exports){
-module.exports=require(59)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/decode.js":59,"buffer":122}],87:[function(require,module,exports){
-module.exports=require(60)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/encode.js":60,"buffer":122}],88:[function(require,module,exports){
+},{"bencode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/node_modules/bencode/bencode.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","git-sha1":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/git-sha1/git-sha1.js","path":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/path-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/node_modules/bencode/bencode.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/re-emitter/index.js":[function(require,module,exports){
 module.exports = reemit
 module.exports.filter = filter
 
@@ -15836,7 +16142,7 @@ function filter (source, events) {
   return emitter
 }
 
-},{"events":141}],89:[function(require,module,exports){
+},{"events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/run-parallel/index.js":[function(require,module,exports){
 module.exports = function (tasks, cb) {
   var results, pending, keys
   if (Array.isArray(tasks)) {
@@ -15873,7 +16179,7 @@ module.exports = function (tasks, cb) {
   }
 }
 
-},{}],90:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/speedometer/index.js":[function(require,module,exports){
 var tick = 1;
 var maxTick = 65535;
 var resolution = 4;
@@ -15909,7 +16215,7 @@ module.exports = function(seconds) {
 		return buffer.length < resolution ? top : (top - btm) * resolution / buffer.length;
 	};
 };
-},{}],91:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/index.js":[function(require,module,exports){
 (function (process){
 module.exports = Discovery
 
@@ -16023,7 +16329,7 @@ Discovery.prototype._dhtLookupAndAnnounce = function () {
 }
 
 }).call(this,require('_process'))
-},{"_process":150,"bittorrent-dht/client":108,"bittorrent-tracker/client":92,"debug":67,"events":141,"extend.js":74,"inherits":77,"re-emitter":88}],92:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","bittorrent-dht/client":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js","bittorrent-tracker/client":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/client.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","re-emitter":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/re-emitter/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/client.js":[function(require,module,exports){
 (function (Buffer){
 module.exports = Client
 
@@ -16367,7 +16673,7 @@ function binaryToHex (id) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122,"debug":67,"events":141,"extend.js":74,"hat":76,"inherits":77,"simple-peer":93,"simple-websocket":96}],93:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","hat":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/hat/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","simple-peer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/index.js","simple-websocket":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-websocket/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/index.js":[function(require,module,exports){
 module.exports = Peer
 
 var debug = require('debug')('simple-peer')
@@ -16677,7 +16983,7 @@ DataStream.prototype._write = function (chunk, encoding, cb) {
   this._peer.send(chunk, cb)
 }
 
-},{"debug":67,"events":141,"extend.js":74,"hat":76,"inherits":77,"is-typedarray":94,"once":79,"stream":166,"typedarray-to-buffer":95}],94:[function(require,module,exports){
+},{"debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","hat":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/hat/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","is-typedarray":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/node_modules/is-typedarray/index.js","once":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","typedarray-to-buffer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/node_modules/typedarray-to-buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/node_modules/is-typedarray/index.js":[function(require,module,exports){
 module.exports      = isTypedArray
 isTypedArray.strict = isStrictTypedArray
 isTypedArray.loose  = isLooseTypedArray
@@ -16718,9 +17024,9 @@ function isLooseTypedArray(arr) {
   return names[toString.call(arr)]
 }
 
-},{}],95:[function(require,module,exports){
-module.exports=require(48)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/typedarray-to-buffer/index.js":48,"buffer":122}],96:[function(require,module,exports){
+},{}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-peer/node_modules/typedarray-to-buffer/index.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/node_modules/typedarray-to-buffer/index.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/node_modules/typedarray-to-buffer/index.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/filestream/node_modules/typedarray-to-buffer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/torrent-discovery/node_modules/webtorrent-tracker/node_modules/simple-websocket/index.js":[function(require,module,exports){
 module.exports = Socket
 
 var EventEmitter = require('events').EventEmitter
@@ -16809,7 +17115,7 @@ Socket.prototype._onclose = function () {
   if (!this._errored) this.emit('close')
 }
 
-},{"events":141,"inherits":77,"once":79}],97:[function(require,module,exports){
+},{"events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","once":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/index.js":[function(require,module,exports){
 (function (Buffer){
 var bencode = require('bencode')
 var BitField = require('bitfield')
@@ -17053,13 +17359,9 @@ module.exports = function (metadata) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"bencode":98,"bitfield":55,"buffer":122,"events":141,"git-sha1":75,"inherits":77}],98:[function(require,module,exports){
-module.exports=require(58)
-},{"./lib/decode":99,"./lib/encode":100,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js":58}],99:[function(require,module,exports){
-module.exports=require(59)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/decode.js":59,"buffer":122}],100:[function(require,module,exports){
-module.exports=require(60)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/encode.js":60,"buffer":122}],101:[function(require,module,exports){
+},{"bencode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/node_modules/bencode/bencode.js","bitfield":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/bitfield/index.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","git-sha1":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/git-sha1/git-sha1.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/node_modules/bencode/bencode.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/node_modules/bencode/bencode.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/node_modules/bencode/bencode.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/parse-torrent/node_modules/parse-torrent-file/node_modules/bencode/bencode.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/index.js":[function(require,module,exports){
 (function (Buffer){
 // TODO: don't return offer when we're at capacity. the approach of not sending handshake
 //       wastes webrtc connections which are a more limited resource
@@ -17339,7 +17641,7 @@ Swarm.prototype._drain = function () {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"bittorrent-protocol":102,"buffer":122,"debug":67,"events":141,"inherits":77,"once":79,"speedometer":90}],102:[function(require,module,exports){
+},{"bittorrent-protocol":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/node_modules/bittorrent-protocol/index.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","once":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/once/once.js","speedometer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/speedometer/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/node_modules/bittorrent-protocol/index.js":[function(require,module,exports){
 (function (Buffer){
 module.exports = Wire
 
@@ -17987,15 +18289,11 @@ function safeBdecode (buf) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"bencode":103,"bitfield":55,"buffer":122,"debug":67,"extend.js":74,"inherits":77,"speedometer":90,"stream":166}],103:[function(require,module,exports){
-module.exports=require(58)
-},{"./lib/decode":104,"./lib/encode":105,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/bencode.js":58}],104:[function(require,module,exports){
-module.exports=require(59)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/decode.js":59,"buffer":122}],105:[function(require,module,exports){
-module.exports=require(60)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/create-torrent/node_modules/bencode/lib/encode.js":60,"buffer":122}],106:[function(require,module,exports){
+},{"bencode":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/node_modules/bittorrent-protocol/node_modules/bencode/bencode.js","bitfield":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/bitfield/index.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","debug":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/debug/browser.js","extend.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/extend.js/index.js","inherits":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js","speedometer":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/speedometer/index.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/webtorrent-swarm/node_modules/bittorrent-protocol/node_modules/bencode/bencode.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/node_modules/bencode/bencode.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/node_modules/bencode/bencode.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/ut_metadata/node_modules/bencode/bencode.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js":[function(require,module,exports){
 
-},{}],107:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/assert/assert.js":[function(require,module,exports){
 // http://wiki.commonjs.org/wiki/Unit_Testing/1.0
 //
 // THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!
@@ -18357,9 +18655,9 @@ var objectKeys = Object.keys || function (obj) {
   return keys;
 };
 
-},{"util/":170}],108:[function(require,module,exports){
-module.exports=require(106)
-},{"/usr/local/lib/node_modules/browserify/lib/_empty.js":106}],109:[function(require,module,exports){
+},{"util/":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browser-resolve/empty.js":[function(require,module,exports){
+module.exports=require("/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js")
+},{"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/lib/_empty.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/utils/common.js":[function(require,module,exports){
 'use strict';
 
 
@@ -18462,7 +18760,7 @@ exports.setTyped = function (on) {
 };
 
 exports.setTyped(TYPED_OK);
-},{}],110:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/adler32.js":[function(require,module,exports){
 'use strict';
 
 // Note: adler32 takes 12% for level 0 and 2% for level 6.
@@ -18495,7 +18793,7 @@ function adler32(adler, buf, len, pos) {
 
 
 module.exports = adler32;
-},{}],111:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/constants.js":[function(require,module,exports){
 module.exports = {
 
   /* Allowed flush values; see deflate() and inflate() below for details */
@@ -18543,7 +18841,7 @@ module.exports = {
   Z_DEFLATED:               8
   //Z_NULL:                 null // Use -1 or null inline, depending on var type
 };
-},{}],112:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/crc32.js":[function(require,module,exports){
 'use strict';
 
 // Note: we can't get significant speed boost here.
@@ -18585,7 +18883,7 @@ function crc32(crc, buf, len, pos) {
 
 
 module.exports = crc32;
-},{}],113:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/deflate.js":[function(require,module,exports){
 'use strict';
 
 var utils   = require('../utils/common');
@@ -20351,7 +20649,7 @@ exports.deflatePending = deflatePending;
 exports.deflatePrime = deflatePrime;
 exports.deflateTune = deflateTune;
 */
-},{"../utils/common":109,"./adler32":110,"./crc32":112,"./messages":117,"./trees":118}],114:[function(require,module,exports){
+},{"../utils/common":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/utils/common.js","./adler32":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/adler32.js","./crc32":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/crc32.js","./messages":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/messages.js","./trees":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/trees.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inffast.js":[function(require,module,exports){
 'use strict';
 
 // See state defs from inflate.js
@@ -20678,7 +20976,7 @@ module.exports = function inflate_fast(strm, start) {
   return;
 };
 
-},{}],115:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inflate.js":[function(require,module,exports){
 'use strict';
 
 
@@ -22182,7 +22480,7 @@ exports.inflateSync = inflateSync;
 exports.inflateSyncPoint = inflateSyncPoint;
 exports.inflateUndermine = inflateUndermine;
 */
-},{"../utils/common":109,"./adler32":110,"./crc32":112,"./inffast":114,"./inftrees":116}],116:[function(require,module,exports){
+},{"../utils/common":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/utils/common.js","./adler32":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/adler32.js","./crc32":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/crc32.js","./inffast":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inffast.js","./inftrees":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inftrees.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inftrees.js":[function(require,module,exports){
 'use strict';
 
 
@@ -22509,7 +22807,7 @@ module.exports = function inflate_table(type, lens, lens_index, codes, table, ta
   return 0;
 };
 
-},{"../utils/common":109}],117:[function(require,module,exports){
+},{"../utils/common":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/utils/common.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/messages.js":[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -22523,7 +22821,7 @@ module.exports = {
   '-5':   'buffer error',        /* Z_BUF_ERROR     (-5) */
   '-6':   'incompatible version' /* Z_VERSION_ERROR (-6) */
 };
-},{}],118:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/trees.js":[function(require,module,exports){
 'use strict';
 
 
@@ -23723,7 +24021,7 @@ exports._tr_stored_block = _tr_stored_block;
 exports._tr_flush_block  = _tr_flush_block;
 exports._tr_tally = _tr_tally;
 exports._tr_align = _tr_align;
-},{"../utils/common":109}],119:[function(require,module,exports){
+},{"../utils/common":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/utils/common.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/zstream.js":[function(require,module,exports){
 'use strict';
 
 
@@ -23753,7 +24051,7 @@ function ZStream() {
 }
 
 module.exports = ZStream;
-},{}],120:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/src/binding.js":[function(require,module,exports){
 (function (process,Buffer){
 var msg = require('pako/lib/zlib/messages');
 var zstream = require('pako/lib/zlib/zstream');
@@ -23993,7 +24291,7 @@ Zlib.prototype._error = function(status) {
 exports.Zlib = Zlib;
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":150,"buffer":122,"pako/lib/zlib/constants":111,"pako/lib/zlib/deflate.js":113,"pako/lib/zlib/inflate.js":115,"pako/lib/zlib/messages":117,"pako/lib/zlib/zstream":119}],121:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","pako/lib/zlib/constants":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/constants.js","pako/lib/zlib/deflate.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/deflate.js","pako/lib/zlib/inflate.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/inflate.js","pako/lib/zlib/messages":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/messages.js","pako/lib/zlib/zstream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/node_modules/pako/lib/zlib/zstream.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/src/index.js":[function(require,module,exports){
 (function (process,Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -24607,7 +24905,7 @@ util.inherits(InflateRaw, Zlib);
 util.inherits(Unzip, Zlib);
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./binding":120,"_process":150,"_stream_transform":164,"assert":107,"buffer":122,"util":170}],122:[function(require,module,exports){
+},{"./binding":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/browserify-zlib/src/binding.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","_stream_transform":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/transform.js","assert":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/assert/assert.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js":[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -25659,7 +25957,7 @@ function decodeUtf8Char (str) {
   }
 }
 
-},{"base64-js":123,"ieee754":124,"is-array":125}],123:[function(require,module,exports){
+},{"base64-js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/base64-js/lib/b64.js","ieee754":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/ieee754/index.js","is-array":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/is-array/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/base64-js/lib/b64.js":[function(require,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -25781,7 +26079,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],124:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/ieee754/index.js":[function(require,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -25867,7 +26165,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],125:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/node_modules/is-array/index.js":[function(require,module,exports){
 
 /**
  * isArray
@@ -25902,7 +26200,7 @@ module.exports = isArray || function (val) {
   return !! val && '[object Array]' == str.call(val);
 };
 
-},{}],126:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/create-hash.js":[function(require,module,exports){
 (function (Buffer){
 var createHash = require('sha.js')
 
@@ -25936,7 +26234,7 @@ module.exports = function (alg) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"./md5":130,"buffer":122,"ripemd160":133,"sha.js":135}],127:[function(require,module,exports){
+},{"./md5":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/md5.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js","ripemd160":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/ripemd160/lib/ripemd160.js","sha.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/create-hmac.js":[function(require,module,exports){
 (function (Buffer){
 var createHash = require('./create-hash')
 
@@ -25983,7 +26281,7 @@ Hmac.prototype.digest = function (enc) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"./create-hash":126,"buffer":122}],128:[function(require,module,exports){
+},{"./create-hash":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/create-hash.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/helpers.js":[function(require,module,exports){
 (function (Buffer){
 var intSize = 4;
 var zeroBuffer = new Buffer(intSize); zeroBuffer.fill(0);
@@ -26021,7 +26319,7 @@ function hash(buf, fn, hashSize, bigEndian) {
 module.exports = { hash: hash };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],129:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/index.js":[function(require,module,exports){
 (function (Buffer){
 var rng = require('./rng')
 
@@ -26078,7 +26376,7 @@ each(['createCredentials'
 })
 
 }).call(this,require("buffer").Buffer)
-},{"./create-hash":126,"./create-hmac":127,"./pbkdf2":139,"./rng":140,"buffer":122}],130:[function(require,module,exports){
+},{"./create-hash":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/create-hash.js","./create-hmac":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/create-hmac.js","./pbkdf2":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/pbkdf2.js","./rng":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/rng.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/md5.js":[function(require,module,exports){
 /*
  * A JavaScript implementation of the RSA Data Security, Inc. MD5 Message
  * Digest Algorithm, as defined in RFC 1321.
@@ -26235,7 +26533,7 @@ module.exports = function md5(buf) {
   return helpers.hash(buf, core_md5, 16);
 };
 
-},{"./helpers":128}],131:[function(require,module,exports){
+},{"./helpers":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/helpers.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/pbkdf2-compat/index.js":[function(require,module,exports){
 var crypto = require('crypto')
 
 var exportFn = require('./pbkdf2')
@@ -26249,7 +26547,7 @@ module.exports = {
   __pbkdf2Export: exportFn
 }
 
-},{"./pbkdf2":132,"crypto":129}],132:[function(require,module,exports){
+},{"./pbkdf2":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/pbkdf2-compat/pbkdf2.js","crypto":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/pbkdf2-compat/pbkdf2.js":[function(require,module,exports){
 (function (Buffer){
 module.exports = function(crypto) {
   function pbkdf2(password, salt, iterations, keylen, digest, callback) {
@@ -26337,7 +26635,7 @@ module.exports = function(crypto) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],133:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/ripemd160/lib/ripemd160.js":[function(require,module,exports){
 (function (Buffer){
 
 module.exports = ripemd160
@@ -26546,7 +26844,7 @@ function ripemd160(message) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":122}],134:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/hash.js":[function(require,module,exports){
 module.exports = function (Buffer) {
 
   //prototype class for hash functions
@@ -26625,7 +26923,7 @@ module.exports = function (Buffer) {
   return Hash
 }
 
-},{}],135:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/index.js":[function(require,module,exports){
 var exports = module.exports = function (alg) {
   var Alg = exports[alg]
   if(!Alg) throw new Error(alg + ' is not supported (we accept pull requests)')
@@ -26639,7 +26937,7 @@ exports.sha1 = require('./sha1')(Buffer, Hash)
 exports.sha256 = require('./sha256')(Buffer, Hash)
 exports.sha512 = require('./sha512')(Buffer, Hash)
 
-},{"./hash":134,"./sha1":136,"./sha256":137,"./sha512":138,"buffer":122}],136:[function(require,module,exports){
+},{"./hash":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/hash.js","./sha1":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha1.js","./sha256":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha256.js","./sha512":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha512.js","buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha1.js":[function(require,module,exports){
 /*
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-1, as defined
  * in FIPS PUB 180-1
@@ -26779,7 +27077,7 @@ module.exports = function (Buffer, Hash) {
   return Sha1
 }
 
-},{"util":170}],137:[function(require,module,exports){
+},{"util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha256.js":[function(require,module,exports){
 
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -26928,7 +27226,7 @@ module.exports = function (Buffer, Hash) {
 
 }
 
-},{"util":170}],138:[function(require,module,exports){
+},{"util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/sha.js/sha512.js":[function(require,module,exports){
 var inherits = require('util').inherits
 
 module.exports = function (Buffer, Hash) {
@@ -27174,7 +27472,7 @@ module.exports = function (Buffer, Hash) {
 
 }
 
-},{"util":170}],139:[function(require,module,exports){
+},{"util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/pbkdf2.js":[function(require,module,exports){
 var pbkdf2Export = require('pbkdf2-compat').__pbkdf2Export
 
 module.exports = function (crypto, exports) {
@@ -27188,7 +27486,7 @@ module.exports = function (crypto, exports) {
   return exports
 }
 
-},{"pbkdf2-compat":131}],140:[function(require,module,exports){
+},{"pbkdf2-compat":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/node_modules/pbkdf2-compat/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/crypto-browserify/rng.js":[function(require,module,exports){
 (function (global,Buffer){
 (function() {
   var g = ('undefined' === typeof window ? global : window) || {}
@@ -27221,7 +27519,7 @@ module.exports = function (crypto, exports) {
 }())
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":122}],141:[function(require,module,exports){
+},{"buffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/buffer/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -27524,7 +27822,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],142:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/index.js":[function(require,module,exports){
 var http = module.exports;
 var EventEmitter = require('events').EventEmitter;
 var Request = require('./lib/request');
@@ -27670,7 +27968,7 @@ http.STATUS_CODES = {
     510 : 'Not Extended',               // RFC 2774
     511 : 'Network Authentication Required' // RFC 6585
 };
-},{"./lib/request":143,"events":141,"url":168}],143:[function(require,module,exports){
+},{"./lib/request":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/lib/request.js","events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","url":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/url/url.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/lib/request.js":[function(require,module,exports){
 var Stream = require('stream');
 var Response = require('./response');
 var Base64 = require('Base64');
@@ -27881,7 +28179,7 @@ var isXHR2Compatible = function (obj) {
     if (typeof FormData !== 'undefined' && obj instanceof FormData) return true;
 };
 
-},{"./response":144,"Base64":145,"inherits":147,"stream":166}],144:[function(require,module,exports){
+},{"./response":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/lib/response.js","Base64":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/node_modules/Base64/base64.js","inherits":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/inherits/inherits_browser.js","stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/lib/response.js":[function(require,module,exports){
 var Stream = require('stream');
 var util = require('util');
 
@@ -28003,7 +28301,7 @@ var isArray = Array.isArray || function (xs) {
     return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{"stream":166,"util":170}],145:[function(require,module,exports){
+},{"stream":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js","util":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/node_modules/Base64/base64.js":[function(require,module,exports){
 ;(function () {
 
   var object = typeof exports != 'undefined' ? exports : this; // #8: web workers
@@ -28065,7 +28363,7 @@ var isArray = Array.isArray || function (xs) {
 
 }());
 
-},{}],146:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/https-browserify/index.js":[function(require,module,exports){
 var http = require('http');
 
 var https = module.exports;
@@ -28080,11 +28378,9 @@ https.request = function (params, cb) {
     return http.request.call(this, params, cb);
 }
 
-},{"http":142}],147:[function(require,module,exports){
-module.exports=require(4)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/inherits/inherits_browser.js":4}],148:[function(require,module,exports){
-module.exports=require(11)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/isarray/index.js":11}],149:[function(require,module,exports){
+},{"http":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/http-browserify/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/inherits/inherits_browser.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/webtorrent/node_modules/inherits/inherits_browser.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/path-browserify/index.js":[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -28312,7 +28608,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":150}],150:[function(require,module,exports){
+},{"_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js":[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -28320,8 +28616,6 @@ var process = module.exports = {};
 process.nextTick = (function () {
     var canSetImmediate = typeof window !== 'undefined'
     && window.setImmediate;
-    var canMutationObserver = typeof window !== 'undefined'
-    && window.MutationObserver;
     var canPost = typeof window !== 'undefined'
     && window.postMessage && window.addEventListener
     ;
@@ -28330,29 +28624,8 @@ process.nextTick = (function () {
         return function (f) { return window.setImmediate(f) };
     }
 
-    var queue = [];
-
-    if (canMutationObserver) {
-        var hiddenDiv = document.createElement("div");
-        var observer = new MutationObserver(function () {
-            var queueList = queue.slice();
-            queue.length = 0;
-            queueList.forEach(function (fn) {
-                fn();
-            });
-        });
-
-        observer.observe(hiddenDiv, { attributes: true });
-
-        return function nextTick(fn) {
-            if (!queue.length) {
-                hiddenDiv.setAttribute('yes', 'no');
-            }
-            queue.push(fn);
-        };
-    }
-
     if (canPost) {
+        var queue = [];
         window.addEventListener('message', function (ev) {
             var source = ev.source;
             if ((source === window || source === null) && ev.data === 'process-tick') {
@@ -28392,7 +28665,7 @@ process.emit = noop;
 
 process.binding = function (name) {
     throw new Error('process.binding is not supported');
-};
+}
 
 // TODO(shtylman)
 process.cwd = function () { return '/' };
@@ -28400,7 +28673,7 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],151:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/punycode/punycode.js":[function(require,module,exports){
 (function (global){
 /*! http://mths.be/punycode v1.2.4 by @mathias */
 ;(function(root) {
@@ -28911,7 +29184,7 @@ process.chdir = function (dir) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],152:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/decode.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -28997,7 +29270,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],153:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/encode.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -29084,39 +29357,35 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],154:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/index.js":[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":152,"./encode":153}],155:[function(require,module,exports){
+},{"./decode":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/decode.js","./encode":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/encode.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/duplex.js":[function(require,module,exports){
 module.exports = require("./lib/_stream_duplex.js")
 
-},{"./lib/_stream_duplex.js":156}],156:[function(require,module,exports){
-arguments[4][5][0].apply(exports,arguments)
-},{"./_stream_readable":158,"./_stream_writable":160,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_duplex.js":5,"_process":150,"core-util-is":161,"inherits":147}],157:[function(require,module,exports){
-arguments[4][6][0].apply(exports,arguments)
-},{"./_stream_transform":159,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/lib/_stream_passthrough.js":6,"core-util-is":161,"inherits":147}],158:[function(require,module,exports){
-module.exports=require(25)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_readable.js":25,"_process":150,"buffer":122,"core-util-is":161,"events":141,"inherits":147,"isarray":148,"stream":166,"string_decoder/":167}],159:[function(require,module,exports){
-module.exports=require(26)
-},{"./_stream_duplex":156,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js":26,"core-util-is":161,"inherits":147}],160:[function(require,module,exports){
-module.exports=require(27)
-},{"./_stream_duplex":156,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js":27,"_process":150,"buffer":122,"core-util-is":161,"inherits":147,"stream":166}],161:[function(require,module,exports){
-module.exports=require(10)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/core-util-is/lib/util.js":10,"buffer":122}],162:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_duplex.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_duplex.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_duplex.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_passthrough.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_passthrough.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_passthrough.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_passthrough.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_transform.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_transform.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_writable.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/lib/_stream_writable.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/passthrough.js":[function(require,module,exports){
 module.exports = require("./lib/_stream_passthrough.js")
 
-},{"./lib/_stream_passthrough.js":157}],163:[function(require,module,exports){
-module.exports=require(32)
-},{"./lib/_stream_duplex.js":156,"./lib/_stream_passthrough.js":157,"./lib/_stream_readable.js":158,"./lib/_stream_transform.js":159,"./lib/_stream_writable.js":160,"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js":32}],164:[function(require,module,exports){
+},{"./lib/_stream_passthrough.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_passthrough.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/readable.js":[function(require,module,exports){
+module.exports=require("/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js")
+},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js":"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/request/node_modules/bl/node_modules/readable-stream/readable.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/transform.js":[function(require,module,exports){
 module.exports = require("./lib/_stream_transform.js")
 
-},{"./lib/_stream_transform.js":159}],165:[function(require,module,exports){
+},{"./lib/_stream_transform.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_transform.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/writable.js":[function(require,module,exports){
 module.exports = require("./lib/_stream_writable.js")
 
-},{"./lib/_stream_writable.js":160}],166:[function(require,module,exports){
+},{"./lib/_stream_writable.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/lib/_stream_writable.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/stream-browserify/index.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -29245,9 +29514,7 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":141,"inherits":147,"readable-stream/duplex.js":155,"readable-stream/passthrough.js":162,"readable-stream/readable.js":163,"readable-stream/transform.js":164,"readable-stream/writable.js":165}],167:[function(require,module,exports){
-module.exports=require(12)
-},{"/Users/raymond/code/hackupstate-fall-2014/sprawl/node_modules/concat-stream/node_modules/readable-stream/node_modules/string_decoder/index.js":12,"buffer":122}],168:[function(require,module,exports){
+},{"events":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/events/events.js","inherits":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/inherits/inherits_browser.js","readable-stream/duplex.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/duplex.js","readable-stream/passthrough.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/passthrough.js","readable-stream/readable.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/readable.js","readable-stream/transform.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/transform.js","readable-stream/writable.js":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/readable-stream/writable.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/url/url.js":[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -29956,14 +30223,14 @@ function isNullOrUndefined(arg) {
   return  arg == null;
 }
 
-},{"punycode":151,"querystring":154}],169:[function(require,module,exports){
+},{"punycode":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/punycode/punycode.js","querystring":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/querystring-es3/index.js"}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/support/isBufferBrowser.js":[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],170:[function(require,module,exports){
+},{}],"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/util.js":[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -30553,4 +30820,4 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":169,"_process":150,"inherits":147}]},{},[2]);
+},{"./support/isBuffer":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/util/support/isBufferBrowser.js","_process":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/process/browser.js","inherits":"/usr/local/lib/node_modules/watchify/node_modules/browserify/node_modules/inherits/inherits_browser.js"}]},{},["/Users/raymond/code/hackupstate-fall-2014/sprawl/inject/worker.js"]);

@@ -17,8 +17,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "jquery": "^2.1.1",
+    "MD5": "^1.2.1",
     "concat-stream": "^1.4.6",
+    "jquery": "^2.1.1",
     "prettysize": "0.0.3",
     "request": "^2.44.0",
     "typedarray-to-buffer": "^1.0.4",

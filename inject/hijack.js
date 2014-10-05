@@ -4,37 +4,49 @@ window.stop();
 
 var num_workers = 0;
 var img_regx = new RegExp(/<img.*>/g);
-var src_regx = new RegExp(/src=('.*(.jpg|.png)'|".*(.jpg|.png)")/g);
+var torrent = require('./torrent');
 // this gets replaced with script via 'shell.js'
 var workerScript = "<WORKER>";
 
+
 $.get('', function(data) {
 //  matches = regx.exec(String(data));
+  $('body').css("display","none");
   data = String(data);
   var img_match = img_regx.exec(data);
   while((img_match != null)) {
+    var src_regx = new RegExp(/src=('.*(.jpg|.png)'|".*(.jpg|.png)")/g);
     var check_reg = src_regx.exec(img_match[0]);
     if (check_reg) {
-    num_workers++;
-    // cut out src=
-    // console.log(check_reg);
-    var img_url = check_reg[0].slice(5, -1);
-    
-    // console.log(img_url);
-    if (img_url.search("http") !== 0) {
-      if (img_url.search("/") === 0) {
-        console.log("/////");
-        img_url = window.location.origin + img_url;
+      num_workers++;
+      // cut out src=
+      // console.log(check_reg);
+      var img_url = check_reg[0].slice(5, -1);
+      // console.log(img_url); 
+      // console.log(img_url);
+      if (img_url.search("http") !== 0) {
+        if (img_url.search("/") === 0) {
+          img_url = window.location.origin + img_url;
+        }
+        else {
+          img_url = window.location.href + img_url;
+        }
       }
-      else {
-        img_url = window.location.href + img_url;
-      }
-    }
-    new_url = Asset(img_url);
+      var new_url = img_url;
+      torrent.download(img_url, function (res) {
+        if (res === -1) {
+          torrent.upload(img_url);
+        }
+        else {
+          new_url = res;
+        }
+        console.log("%c img_url: " + img_url, 'color: #0B2220');
+        console.log("%c new_url: " + new_url + "\n", 'color: #0B2220');
+        $('body').css("display","block");
+        // document.write("<img src='"+new_url+"' />");
+      });
 
 // //    console.log("img_match:", img_match);
-    console.log("img_url:", img_url);
-    console.log("new_url:", new_url);
     }
     img_match = img_regx.exec(data);
   }
@@ -44,7 +56,6 @@ $.get('', function(data) {
   });
 */
 
-  document.write(data);
 });
 
 
@@ -66,7 +77,7 @@ function Asset(url) {
 
     var blob        =   new Blob([workerScript], {type: 'text/plain'});
     // var worker      =   new Worker(URL.createObjectURL(blob));
-    var worker = new Worker(chrome.extension.getURL("inject/w_bundle.js"));
+    var worker = new Worker(chrome.runtime.getURL("inject/w_bundle.js"));
     worker.postMessage({cmd:"start"});
 
     worker.onmessage = function(e) {
