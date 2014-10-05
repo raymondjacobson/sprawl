@@ -12,7 +12,7 @@ var kvStoreURL = "http://raymondjacobson.com:3000/";
 client = new WebTorrent();
 
 // Downloads the torrent for a given assetURL
-var download = function(assetURL) {
+var download = function(assetURL, callback) {
   // First, get the hash_info for the torrent file
   var getUrl = kvStoreURL + "get/" + assetURL;
   request(getUrl, function(error, resp, body) {
@@ -42,12 +42,8 @@ var onTorrentDownload = function(torrent) {
     files.push(file);
     file.createReadStream().pipe(concat(function (buf) {
       // Download of file is done
-      console.log(file.name);
-      // var a = document.createElement('a');
-      // a.download = file.name;
-      // a.href = URL.createObjectURL(new Blob([ buf ]));
-      // a.textContent = 'download ' + file.name;
-      // document.getElementById("dragdrop").innerHTML += "<p>" + a.outerHTML + "</p>";
+      new_url = URL.createObjectURL(new Blob([ buf ]));
+      callback(new_url);
     }));
   });
 }
