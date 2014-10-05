@@ -28,26 +28,26 @@ var download = function(assetURL, callback) {
       callback(-1);
     }
   });
+  // Download handler, to send callbacks
+  var onTorrentDownload = function(torrent) {
+    console.log(torrent.infoHash);
+    console.log(torrent.swarm);
+    torrent.swarm.on('download', function () {
+      var progress = (100 * torrent.downloaded / torrent.parsedTorrent.length).toFixed(1)
+      console.log('progress: ' + progress + '% -- download speed: ' + prettysize(torrent.swarm.downloadSpeed()) + '/s')
+    });
+    files = [];
+    torrent.files.forEach(function (file) {
+      files.push(file);
+      file.createReadStream().pipe(concat(function (buf) {
+        // Download of file is done
+        new_url = URL.createObjectURL(new Blob([ buf ]));
+        callback(new_url);
+      }));
+    });
+  }
 }
 
-// Download handler, to send callbacks
-var onTorrentDownload = function(torrent) {
-  console.log(torrent.infoHash);
-  console.log(torrent.swarm);
-  torrent.swarm.on('download', function () {
-    var progress = (100 * torrent.downloaded / torrent.parsedTorrent.length).toFixed(1)
-    console.log('progress: ' + progress + '% -- download speed: ' + prettysize(torrent.swarm.downloadSpeed()) + '/s')
-  });
-  files = [];
-  torrent.files.forEach(function (file) {
-    files.push(file);
-    file.createReadStream().pipe(concat(function (buf) {
-      // Download of file is done
-      new_url = URL.createObjectURL(new Blob([ buf ]));
-      callback(new_url);
-    }));
-  });
-}
 
 // Uploads the torrent given an assetURL
 var upload = function(assetURL) {
