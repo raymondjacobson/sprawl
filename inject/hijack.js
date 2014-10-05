@@ -4,7 +4,7 @@ window.stop();
 
 var num_workers = 0;
 var img_regx = new RegExp(/<img.*>/g);
-var src_regx = new RegExp(/src=('.*'|".*")/g);
+var src_regx = new RegExp(/src=('.*(.jpg|.png)'|".*(.jpg|.png)")/g);
 // this gets replaced with script via 'shell.js'
 var workerScript = "<WORKER>";
 
@@ -14,8 +14,20 @@ $.get('', function(data) {
   var img_match = img_regx.exec(data);
   while((img_match !== null)) {
     num_workers++;
-//    var img_url = window.location + src_regx.exec(img_match)[0].slice(5, -1);
-    var img_url = "fucking fucker fuck";
+    // cut out src=
+    var img_url = src_regx.exec(img_match)[0].slice(5, -1);
+    
+    if (img_url.search("http") !== 0) {
+      if (img_url.search("/") === 0) {
+        console.log("/////");
+        img_url = window.location.origin + img_url;
+      }
+      else {
+        img_url = window.location.href + img_url;
+      }
+    }
+//    img_url = window.location + img_url;
+//    img_url = "fucking fucker fuck";
     Asset(img_url);
 
 //    console.log("img_match:", img_match);

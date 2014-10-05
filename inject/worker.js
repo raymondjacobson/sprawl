@@ -24,9 +24,11 @@ function handle (url,callback) {
 
     callback({ cmd: 'message', message: 'received url, retrieving data...'});
 
+/*
     $.get(url,function (res) {
         callback({ cmd: 'response', url: url, data: res, type: 'server'});
     });
+*/
 
     torrent.get(url, function (res) {
         callback({ cmd: 'response', url: url, data: res, type: 'torrent'});
