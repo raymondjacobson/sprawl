@@ -7,14 +7,14 @@ var WebTorrent = require('webtorrent')
   , request = require('request')
   , toBuffer = require('typedarray-to-buffer');
 
-var kvStoreURL = "http://raymondjacobson.com:3000/";
+var kvStoreURL = 'http://raymondjacobson.com:3000/';
 
 client = new WebTorrent();
 
 /* Downloads the torrent for a given assetURL */
-var download = function(assetURL, callback) {
+exports.download = function(assetURL, callback) {
   /* First, get the hash_info for the torrent file */
-  var getUrl = kvStoreURL + "get/" + assetURL;
+  var getUrl = kvStoreURL + 'get/' + assetURL;
   request(getUrl, function(error, resp, body) {
     if (!error && response.statusCode == 200) {
       /* Download the torrent */
@@ -50,7 +50,7 @@ var download = function(assetURL, callback) {
 
 
 /* Uploads the torrent given an assetURL */
-var upload = function(assetURL) {
+exports.upload = function(assetURL) {
   var xhr=new XMLHttpRequest;
   xhr.responseType='blob';
   xhr.open('GET',assetURL,true);
@@ -66,9 +66,9 @@ var upload = function(assetURL) {
         bb.buffer = buffer;
         new_url = URL.createObjectURL(bb);
         client.seed([bb], function(torrent) {
-          var putUrl = kvStoreURL + "put/" + assetURL + "/" + torrent.infoHash;
+          var putUrl = kvStoreURL + 'put/' + assetURL + '/' + torrent.infoHash;
           request(putUrl, function(error, resp, body) {});
-        }));
+        });
       });
       reader.addEventListener('error', function (err) {
         console.error('FileReader error' + err);

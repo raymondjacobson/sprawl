@@ -1,4 +1,4 @@
-var torrent = '';
+var torrent = require('./torrent');
 
 self.addEventListener('message', function(e) {
     var data = e.data;
@@ -30,8 +30,14 @@ function handle (url,callback) {
     });
 */
 
-    torrent.get(url, function (res) {
-        callback({ cmd: 'response', url: url, data: res, type: 'torrent'});
+    torrent.download(url, function (res) {
+        if (res === -1) {
+            torrent.upload(url);
+            callback({ cmd: 'response', url: -1, type: 'server'});
+        }
+        else {
+            callback({ cmd: 'response', url: res, type: 'torrent'});
+        }
     });
 
 

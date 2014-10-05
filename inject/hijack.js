@@ -12,11 +12,15 @@ $.get('', function(data) {
 //  matches = regx.exec(String(data));
   data = String(data);
   var img_match = img_regx.exec(data);
-  while((img_match !== null)) {
+  while((img_match != null)) {
+    var check_reg = src_regx.exec(img_match[0]);
+    if (check_reg) {
     num_workers++;
     // cut out src=
-    var img_url = src_regx.exec(img_match)[0].slice(5, -1);
+    // console.log(check_reg);
+    var img_url = check_reg[0].slice(5, -1);
     
+    // console.log(img_url);
     if (img_url.search("http") !== 0) {
       if (img_url.search("/") === 0) {
         console.log("/////");
@@ -26,12 +30,12 @@ $.get('', function(data) {
         img_url = window.location.href + img_url;
       }
     }
-//    img_url = window.location + img_url;
-//    img_url = "fucking fucker fuck";
-    Asset(img_url);
+    new_url = Asset(img_url);
 
-//    console.log("img_match:", img_match);
+// //    console.log("img_match:", img_match);
     console.log("img_url:", img_url);
+    console.log("new_url:", new_url);
+    }
     img_match = img_regx.exec(data);
   }
 /*
@@ -61,19 +65,26 @@ function Asset(url) {
     console.log('asset created');
 
     var blob        =   new Blob([workerScript], {type: 'text/plain'});
-    var worker      =   new Worker(URL.createObjectURL(blob));
+    // var worker      =   new Worker(URL.createObjectURL(blob));
+    var worker = new Worker(chrome.extension.getURL("inject/w_bundle.js"));
+    worker.postMessage({cmd:"start"});
 
     worker.onmessage = function(e) {
         console.log('worker message received');
         switch (e.data.cmd) {
             case 'response':
-                console.log(e.data.data);
+              console.log(e.data.url);
+              if (e.data.url !== -1) {
+                worker.postMessage({cmd: 'stop'});
+                return e.data.url;
+              }
+              return url;
             break;
             case 'message':
-                console.log(e.data.message);
+              console.log(e.data.message);
             break;
             default:
-                console.log('unknown message');
+              console.log('unknown message');
         };
     };
 
