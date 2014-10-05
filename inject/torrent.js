@@ -29,6 +29,7 @@ var download = function(assetURL) {
   });
 }
 
+// Download handler, to send callbacks
 var onTorrentDownload = function(torrent) {
   console.log(torrent.infoHash);
   console.log(torrent.swarm);
@@ -51,7 +52,7 @@ var onTorrentDownload = function(torrent) {
   });
 }
 
-// Downloads the torrent given an assetURL
+// Uploads the torrent given an assetURL
 var upload = function(assetURL) {
   var xhr=new XMLHttpRequest;
   xhr.responseType='blob';
@@ -67,7 +68,10 @@ var upload = function(assetURL) {
         var buffer = toBuffer(new Uint8Array(e.target.result))
         bb.buffer = buffer;
         new_url = URL.createObjectURL(bb);
-        client.seed([bb], onTorrentUpload);
+        client.seed([bb], function(torrent) {
+          var putUrl = kvStoreURL + "put/" + assetURL + "/" + torrent.infoHash;
+          request(putUrl, function(error, resp, body) {});
+        }));
       });
       reader.addEventListener('error', function (err) {
         console.error('FileReader error' + err);
@@ -75,13 +79,4 @@ var upload = function(assetURL) {
       reader.readAsArrayBuffer(bb);
     }
   }
-}
-
-var onTorrentUpload = function(torrent) {
-  console.log(torrent.infoHash);
-  request()
-  console.log("Swarm: " + torrent.swarm);
-  torrent.swarm.on('upload', function (){
-    console.log('upload speed:' + prettysize(client.uploadSpeed()) + '/s<br>')
-  });
 }
