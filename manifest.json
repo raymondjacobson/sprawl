@@ -27,7 +27,7 @@
     "content_scripts": [{
         "matches": ["<all_urls>"],
         "run_at": "document_start",
-        "js": ["jquery-2.1.1.min.js", "inject/hijack.js", "patch-worker.js", "inject/h_bundle.js"]
+        "js": ["jquery-2.1.1.min.js", "patch-worker.js", "inject/h_bundle.js"]
     }],
     "web_accessible_resources": [
         "inject/w_bundle.js"

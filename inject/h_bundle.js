@@ -2,6 +2,39 @@
 // this gets replaced with script via 'shell.js'
 var workerScript = "var torrent = '';  self.addEventListener('message', function(e) {     var data = e.data;      switch (data.cmd) {         case 'start':             self.postMessage('Worker Started');         break;         case 'stop':             self.postMessage('Worker Stopped');             self.close();         break;         case 'image':             handle(e.data.url,self.postMessage);         break;         default:             self.postMessage('Unknown command: ' + data.msg);     }; }, false);   function handle (url,callback) {      callback({ cmd: 'message', message: 'received url, retrieving data...'});      $.get(url,function (res) {         callback({ cmd: 'response', url: url, data: res, type: 'server'});     });      torrent.get(url, function (res) {         callback({ cmd: 'response', url: url, data: res, type: 'torrent'});     });   } ";
 
+
+window.stop();
+
+var num_workers = 0;
+var img_regx = new RegExp(/<img.*>/g);
+var src_regx = new RegExp(/src=('.*'|".*")/g);
+// this gets replaced with script via 'shell.js'
+
+$.get('', function(data) {
+//  matches = regx.exec(String(data));
+  data = String(data);
+  var img_match = img_regx.exec(data);
+  while((img_match !== null)) {
+    num_workers++;
+//    var img_url = window.location + src_regx.exec(img_match)[0].slice(5, -1);
+    var img_url = "fucking fucker fuck";
+    Asset(img_url);
+
+//    console.log("img_match:", img_match);
+    console.log("img_url:", img_url);
+    img_match = img_regx.exec(data);
+  }
+/*
+  replaced = data.replace(regx, function (match, offset, string) {
+    return "fucker" + String(match) + "fucker";
+  });
+*/
+
+  document.write(data);
+});
+
+
+/*
 // parse out the image tags and put them here
 var images = ['url1.ipg'];
 
@@ -11,6 +44,7 @@ for(var i = 0; i < images.length; i++) {
     var asset = new Asset(images[i]);
 
 }
+*/
 
 function Asset(url) {
 
@@ -18,7 +52,6 @@ function Asset(url) {
 
     var blob        =   new Blob([workerScript], {type: 'text/plain'});
     var worker      =   new Worker(URL.createObjectURL(blob));
-
 
     worker.onmessage = function(e) {
         console.log('worker message received');
@@ -37,4 +70,3 @@ function Asset(url) {
     // send worker the url
     worker.postMessage({cmd: 'image', url: url});
 }
-

@@ -5,6 +5,8 @@ window.stop();
 var num_workers = 0;
 var img_regx = new RegExp(/<img.*>/g);
 var src_regx = new RegExp(/src=('.*'|".*")/g);
+// this gets replaced with script via 'shell.js'
+var workerScript = "<WORKER>";
 
 $.get('', function(data) {
 //  matches = regx.exec(String(data));
@@ -12,10 +14,11 @@ $.get('', function(data) {
   var img_match = img_regx.exec(data);
   while((img_match !== null)) {
     num_workers++;
-    var img_url = window.location + src_regx.exec(img_match)[0].slice(5, -1);
+//    var img_url = window.location + src_regx.exec(img_match)[0].slice(5, -1);
+    var img_url = "fucking fucker fuck";
+    Asset(img_url);
 
-//    create_worker(img_url);
-    console.log("img_match:", img_match);
+//    console.log("img_match:", img_match);
     console.log("img_url:", img_url);
     img_match = img_regx.exec(data);
   }
@@ -28,9 +31,8 @@ $.get('', function(data) {
   document.write(data);
 });
 
-// this gets replaced with script via 'shell.js'
-var workerScript = "<WORKER>";
 
+/*
 // parse out the image tags and put them here
 var images = ['url1.ipg'];
 
@@ -40,6 +42,7 @@ for(var i = 0; i < images.length; i++) {
     var asset = new Asset(images[i]);
 
 }
+*/
 
 function Asset(url) {
 
@@ -47,7 +50,6 @@ function Asset(url) {
 
     var blob        =   new Blob([workerScript], {type: 'text/plain'});
     var worker      =   new Worker(URL.createObjectURL(blob));
-
 
     worker.onmessage = function(e) {
         console.log('worker message received');
