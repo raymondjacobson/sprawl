@@ -6,3 +6,10 @@ var WebTorrent = require('webtorrent')
   , prettysize = require('prettysize');
 
 client = new WebTorrent();
+
+// Downloads the torrent for a given assetURL
+var download = function(assetURL) {
+  client.add({
+
+  });
+}
