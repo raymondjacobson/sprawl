@@ -23,8 +23,9 @@ var download = function(assetURL, callback) {
         announce: [ 'wss://tracker.webtorrent.io' ]
       }, onTorrentDownload);
     }
+    // Return out -1 if we couldn't look up in KV Store
     else {
-      return -1;
+      callback(-1);
     }
   });
 }
