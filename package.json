@@ -5,7 +5,7 @@
   "main": "backend/backend.js",
   "scripts": {
     "start": "watchify inject/hijack.js -o inject/h_bundle.js & watchify inject/worker.js -o inject/w_bundle.js & watchify backend/background.js -o backend/bundle.js && fg",
-    "build": "browserify inject/app.js | uglifyjs -cm > inject/bundle.min.js",
+    "build": "node shell.js browserify inject/hijack.js -o inject/h_bundle.js & browserify inject/worker.js -o inject/w_bundle.js & browserify backend/background.js -o backend/bundle.js",
     "collect-static": "collect-static . ./static"
   },
   "repository": {
@@ -17,5 +17,6 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "jquery": "^2.1.1"
   }
 }
